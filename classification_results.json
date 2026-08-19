@@ -1,0 +1,5 @@
+{
+  "standard_accuracy": 0.98499995470047,
+  "sliding_window_w32_accuracy": 0.98499995470047,
+  "sliding_window_w64_accuracy": 0.9649999737739563
+}

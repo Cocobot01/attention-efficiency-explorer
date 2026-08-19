@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Attention Efficiency Explorer — Beyond Quadratic</title>
+  <meta name="description" content="MSc Dissertation Explorer — Beyond Quadratic: Exploring Efficient Variants of Transformer Attention">
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@400;600;700&display=swap" rel="stylesheet">
+  <!-- Plotly.js -->
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title">Attention Efficiency Explorer</div>
+        <div class="sidebar-sub">COMP702 &middot; 201995936</div>
+        <div class="sidebar-institution">University of Liverpool</div>
+      </div>
+      <div class="sidebar-divider"></div>
+      
+      <nav class="sidebar-nav">
+        <div class="nav-label">Panels</div>
+        <button class="nav-item active" data-tab="overview">
+          <span class="nav-icon">📊</span> Overview
+        </button>
+        <button class="nav-item" data-tab="patterns">
+          <span class="nav-icon">🔍</span> Attention patterns
+        </button>
+        <button class="nav-item" data-tab="scaling">
+          <span class="nav-icon">📈</span> Efficiency scaling
+        </button>
+        <button class="nav-item" data-tab="accuracy">
+          <span class="nav-icon">🎯</span> Task accuracy
+        </button>
+        <button class="nav-item" data-tab="depth">
+          <span class="nav-icon">🧱</span> Depth study
+        </button>
+        <button class="nav-item" data-tab="exports">
+          <span class="nav-icon">💾</span> Data & exports
+        </button>
+      </nav>
+
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-ethics">
+        <div class="sidebar-sub">ETHICS STATEMENT</div>
+        <p class="ethics-text">
+          Data category A, participant category 0. No human- or animal-derived data; all sequences are synthetic or drawn from openly licensed benchmarks.
+        </p>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      
+      <!-- Panel 0: Overview -->
+      <section id="tab-overview" class="panel-section active">
+        <div class="eyebrow">MSc Dissertation &middot; University of Liverpool</div>
+        <h1 class="page-title">Beyond Quadratic</h1>
+        <div class="standfirst">
+          Standard self-attention compares every query position with every key position, so its cost grows with the square of sequence length. This explorer walks through four attention variants and separates the ones that genuinely reduce that cost from the one that only appears to.
+        </div>
+
+        <div class="tiles-grid" id="overview-tiles">
+          <div class="tile">
+            <div class="tile-label">Longest sequence</div>
+            <div class="tile-value">8,192</div>
+            <div class="tile-note">tokens profiled</div>
+          </div>
+          <div class="tile">
+            <div class="tile-label">Standard attention</div>
+            <div class="tile-value">8.0 GB</div>
+            <div class="tile-note">147 ms per forward pass</div>
+          </div>
+          <div class="tile">
+            <div class="tile-label">Overlapping window</div>
+            <div class="tile-value">95 MB</div>
+            <div class="tile-note">2.2 ms per forward pass</div>
+          </div>
+          <div class="tile">
+            <div class="tile-label">Difference</div>
+            <div class="tile-value">87× lighter</div>
+            <div class="tile-note">68× faster at this length</div>
+          </div>
+        </div>
+
+        <div class="rule"></div>
+        <div class="eyebrow">The four variants</div>
+
+        <div class="grid-2col">
+          <div class="overview-description">
+            <p><strong>Standard (full) attention</strong> — every position attends to every other. Quadratic in time and memory, and the reference point for accuracy.</p>
+            <p><strong>Naive sliding-window (masked)</strong> — builds the full score matrix, then masks it down to a local window. It reproduces the <em>accuracy</em> of a local method without any of the saving: the expensive step still happens, so it lands slightly slower than standard attention.</p>
+            <p><strong>Disjoint block</strong> — the sequence is cut into non-overlapping blocks and each position attends only inside its own block. Genuinely linear, but information never crosses a block boundary, not even into the adjacent block.</p>
+            <p><strong>Overlapping sliding-window</strong> — each block additionally attends to its immediate left and right neighbours, in the manner of Longformer. Still linear, with roughly three times the scores per query and a receptive field that widens with depth.</p>
+          </div>
+          <div class="overview-preview-box">
+            <label for="overview-preview-select" class="preview-label">Preview a variant</label>
+            <select id="overview-preview-select" class="select-input">
+              <option value="Overlapping sliding-window">Overlapping sliding-window</option>
+              <option value="Disjoint block">Disjoint block</option>
+              <option value="Standard (full) attention">Standard (full) attention</option>
+            </select>
+            <div id="overview-preview-chart" class="chart-container-sm"></div>
+            <div class="chart-caption">
+              Attended query–key pairs at sequence length 48, window 8. The <em>Attention patterns</em> panel makes these controls live.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 1: Attention Patterns -->
+      <section id="tab-patterns" class="panel-section">
+        <div class="eyebrow">Panel 01 &middot; Mechanism</div>
+        <h1 class="page-title">Attention patterns</h1>
+        <div class="standfirst">
+          This panel computes the mask each variant applies, live, from the same block logic used in the implementation. Nothing here is stored output — move a control and the mask is rebuilt in real time.
+        </div>
+
+        <div class="controls-card">
+          <div class="control-group">
+            <label for="pattern-seq-len">Sequence length: <span id="val-seq-len" class="mono-val">64</span></label>
+            <input type="range" id="pattern-seq-len" min="16" max="256" step="16" value="64">
+          </div>
+          <div class="control-group">
+            <label for="pattern-win-size">Window size: <span id="val-win-size" class="mono-val">8</span></label>
+            <input type="range" id="pattern-win-size" min="2" max="64" step="2" value="8">
+          </div>
+          <div class="control-group">
+            <label for="pattern-variant">Variant</label>
+            <select id="pattern-variant" class="select-input">
+              <option value="Overlapping sliding-window">Overlapping sliding-window</option>
+              <option value="Disjoint block">Disjoint block</option>
+              <option value="Standard (full) attention">Standard (full) attention</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid-2col-wide-left">
+          <div class="chart-box">
+            <div id="mask-matrix-chart" class="chart-container-lg"></div>
+          </div>
+          <div class="metrics-column">
+            <div class="tile">
+              <div class="tile-label">Attended pairs</div>
+              <div class="tile-value" id="pattern-coverage">34.4%</div>
+              <div class="tile-note" id="pattern-coverage-note">1,408 of 4,096 query–key pairs</div>
+            </div>
+            <div class="tile">
+              <div class="tile-label">Blocks</div>
+              <div class="tile-value" id="pattern-blocks">8</div>
+              <div class="tile-note">sequence length ÷ window size, rounded up</div>
+            </div>
+            <div class="tile" id="pattern-reach-tile">
+              <div class="tile-label">Reach per layer</div>
+              <div class="tile-value" id="pattern-reach">16 tokens</div>
+              <div class="tile-note">furthest a token's influence travels in one layer</div>
+            </div>
+            <button id="download-mask-csv" class="btn btn-secondary">
+              📥 Download mask as CSV
+            </button>
+          </div>
+        </div>
+
+        <div id="degenerate-warning" class="caveat hidden" style="margin-top: 1.5rem;">
+          <strong>Degenerate configuration.</strong> With three blocks or fewer, every block already reaches every other block, so this is full attention in all but name. Accuracy measured here says nothing about local attention on long sequences — the same effect explains the w=128 result in the Task accuracy panel.
+        </div>
+      </section>
+
+      <!-- Panel 2: Efficiency Scaling -->
+      <section id="tab-scaling" class="panel-section">
+        <div class="eyebrow">Panel 02 &middot; Cost</div>
+        <h1 class="page-title">Efficiency scaling</h1>
+        <div class="standfirst">
+          Forward-pass runtime and peak memory, measured within a single GPU session across sequence lengths from 128 to 8,192.
+        </div>
+
+        <div class="controls-card flex-row">
+          <span class="control-label">Measure:</span>
+          <label class="radio-label">
+            <input type="radio" name="scaling-measure" value="Both" checked> Both
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="scaling-measure" value="Runtime"> Runtime
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="scaling-measure" value="Peak memory"> Peak memory
+          </label>
+        </div>
+
+        <div class="charts-grid-2" id="scaling-charts-wrapper">
+          <div class="chart-box" id="runtime-chart-box">
+            <div id="scaling-runtime-chart" class="chart-container"></div>
+          </div>
+          <div class="chart-box" id="memory-chart-box">
+            <div id="scaling-memory-chart" class="chart-container"></div>
+          </div>
+        </div>
+
+        <div class="rule"></div>
+        <div class="eyebrow">At sequence length 8,192</div>
+        <div class="tiles-grid-4" id="scaling-tiles-container"></div>
+
+        <div class="caveat" style="margin-top: 1.5rem;">
+          The naive masked variant is <strong>slower</strong> than standard attention (216 ms against 147 ms) because masking happens after the full score matrix has been built. Restricting what a model attends to only saves compute if the restriction changes what gets computed.
+        </div>
+
+        <details class="expander-box">
+          <summary class="expander-summary">Measured values & Data Table</summary>
+          <div class="expander-content">
+            <div class="table-actions">
+              <button id="download-sweep-csv" class="btn btn-secondary btn-sm">Download CSV</button>
+            </div>
+            <div class="table-responsive">
+              <table id="sweep-data-table" class="data-table">
+                <thead>
+                  <tr>
+                    <th>Variant</th>
+                    <th>Seq Len</th>
+                    <th>Runtime (s)</th>
+                    <th>Peak Memory (MB)</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <!-- Panel 3: Task Accuracy -->
+      <section id="tab-accuracy" class="panel-section">
+        <div class="eyebrow">Panel 03 &middot; Capability</div>
+        <h1 class="page-title">Task accuracy</h1>
+
+        <div class="controls-card flex-row">
+          <span class="control-label">Task:</span>
+          <label class="radio-label">
+            <input type="radio" name="accuracy-task" value="copy" checked> Sequence copy (long-range)
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="accuracy-task" value="classification"> Text classification
+          </label>
+        </div>
+
+        <!-- Copy Task Section -->
+        <div id="task-copy-container">
+          <div class="standfirst">
+            The model must reproduce a sequence of length 128 presented earlier in the input, a copy distance of about 129 tokens. Success requires carrying information across that gap.
+          </div>
+
+          <div class="chart-box">
+            <div id="copy-accuracy-chart" class="chart-container-lg"></div>
+          </div>
+
+          <div class="caveat" style="margin-top: 1.5rem;">
+            <strong>Two results, read separately.</strong> At every window size a long sequence would actually use, both variants sit at chance: a local window cannot route information across a gap wider than its reach. At w=128 the overlapping variant reaches 0.99, but only three blocks exist at that setting, so every block sees every other and this is effectively full attention. It is evidence that the overlap mechanism works — the disjoint variant, which never crosses a block boundary, stays at chance in the identical configuration — and not evidence that local attention solves long-range tasks.
+          </div>
+
+          <details class="expander-box">
+            <summary class="expander-summary">Measured values (Copy Task)</summary>
+            <div class="expander-content">
+              <div class="table-actions">
+                <button id="download-copy-csv" class="btn btn-secondary btn-sm">Download CSV</button>
+              </div>
+              <div class="table-responsive">
+                <table id="copy-data-table" class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Variant</th>
+                      <th>Window Size</th>
+                      <th>Accuracy</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <!-- Classification Section -->
+        <div id="task-classification-container" class="hidden">
+          <div class="standfirst">
+            A short-sequence text classification task, included to test whether the copy-task failure carries over to a more realistic workload.
+          </div>
+
+          <div class="chart-box">
+            <div id="classification-accuracy-chart" class="chart-container-lg"></div>
+          </div>
+
+          <div class="caveat" style="margin-top: 1.5rem;">
+            <strong>Read this as a property of the task, not of the model.</strong> Local and full attention scoring alike here indicates the task can be solved from local evidence, so it never exercises the long-range capability the copy task isolates. It is not evidence that local attention substitutes for full attention in general. These runs also cover standard and disjoint block attention only; the overlapping variant has not yet been evaluated on this task.
+          </div>
+
+          <details class="expander-box">
+            <summary class="expander-summary">Measured values (Classification)</summary>
+            <div class="expander-content">
+              <div class="table-actions">
+                <button id="download-classification-csv" class="btn btn-secondary btn-sm">Download CSV</button>
+              </div>
+              <div class="table-responsive">
+                <table id="classification-data-table" class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Configuration</th>
+                      <th>Accuracy</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- Panel 4: Depth Study -->
+      <section id="tab-depth" class="panel-section">
+        <div class="eyebrow">Panel 04 &middot; Control</div>
+        <h1 class="page-title">Depth study</h1>
+        <div class="standfirst">
+          Stacking local-attention layers widens the receptive field in theory, since each layer carries information one window further. This panel asks whether that recovers the copy task in practice.
+        </div>
+
+        <div class="chart-box">
+          <div id="depth-study-chart" class="chart-container-lg"></div>
+        </div>
+
+        <div class="tiles-grid-2" style="margin-top: 1.5rem;">
+          <div class="tile">
+            <div class="tile-label">Overlapping, w=32</div>
+            <div class="tile-value">0.019–0.025</div>
+            <div class="tile-note">across 1–4 layers</div>
+          </div>
+          <div class="tile">
+            <div class="tile-label">Standard control</div>
+            <div class="tile-value">0.975–1.000</div>
+            <div class="tile-note">across 1–4 layers</div>
+          </div>
+        </div>
+
+        <div class="caveat" style="margin-top: 1.5rem;">
+          <strong>The control is what makes this readable.</strong> Standard attention holds high accuracy at every depth, so the residual connections, learning rate and training loop are sound at depth; a flat local-attention curve therefore reflects the architecture rather than a broken setup. The claim stays bounded: depth did not compensate <em>within the range tested</em>. Four layers at w=32 gives a theoretical reach well short of the copy distance, so this does not show that depth could never help.
+        </div>
+
+        <details class="expander-box">
+          <summary class="expander-summary">Measured values (Depth Study)</summary>
+          <div class="expander-content">
+            <div class="table-actions">
+              <button id="download-depth-csv" class="btn btn-secondary btn-sm">Download CSV</button>
+            </div>
+            <div class="table-responsive">
+              <table id="depth-data-table" class="data-table">
+                <thead>
+                  <tr>
+                    <th>Variant</th>
+                    <th>Layers (Depth)</th>
+                    <th>Accuracy</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <!-- Panel 5: Data & Exports -->
+      <section id="tab-exports" class="panel-section">
+        <div class="eyebrow">Panel 05 &middot; Provenance</div>
+        <h1 class="page-title">Data & exports</h1>
+        <div class="standfirst">
+          Every figure in this explorer is read from the result JSON files generated directly by experiment benchmarks. Inspect or download raw experiment outputs below.
+        </div>
+
+        <div class="files-list" id="files-inspector-container"></div>
+
+        <div class="rule"></div>
+        <div class="eyebrow">Exporting figures</div>
+        <p class="export-note">
+          Every chart carries an interactive toolbar in its top-right corner on hover. Click the camera icon to save high-resolution PNG charts. Tabular CSV exports sit under the <em>Measured values</em> expander on each panel.
+        </p>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
