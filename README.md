@@ -1,61 +1,61 @@
 # Attention Efficiency Explorer
 
-Interactive results dashboard for **Beyond Quadratic: Exploring Efficient
-Variants of Transformer Attention** (COMP702, Shashidhar Kumar, 201995936).
+**Beyond Quadratic: Exploring Efficient Variants of Transformer Attention**
+MSc Data Science & AI dissertation, University of Liverpool · Distinction (73%) · Shashidhar Kumar
 
-Every panel reads from the JSON files in `data/`, written directly by the
-experiment notebook. No result is hard-coded.
+Standard Transformer attention scales quadratically with sequence length. This project implements four attention variants in PyTorch, benchmarks their runtime, memory and accuracy, and presents the results in an interactive Streamlit dashboard.
 
-## Running it
+## Key results (sequence length 8,192)
+
+| Variant | Peak memory | Runtime | vs standard |
+|---|---|---|---|
+| Standard (full) attention | 8,243 MB | 147.0 ms | reference |
+| Naive sliding-window (masked) | 8,819 MB | 216.4 ms | no saving |
+| Disjoint block | 55 MB | 1.3 ms | 151× lighter |
+| Overlapping sliding-window | 95 MB | 2.2 ms | 87× lighter |
+
+- **Masking alone saves nothing.** The naive variant still builds the full score matrix, so it is slower than standard attention.
+- **Accuracy holds on local tasks.** Block-local attention matches standard attention on long-document classification (99.0% vs 98.5%, arXiv vs PubMed).
+- **Long-range tasks expose the limit.** On a 128-token copy task, windowed variants stay at chance whenever the window is smaller than the gap.
+
+![Efficiency scaling](screenshots/efficiency_scaling.png)
+![Task accuracy](screenshots/task_accuracy.png)
+![Attention patterns](screenshots/attention_patterns.png)
+
+## Running the dashboard
 
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Opens at `http://localhost:8501`. On Windows, if `streamlit` isn't recognised,
-use `python -m streamlit run app.py`.
-
-Tested end to end: all six panels and every control branch render without
-errors, on Streamlit 1.62.
+Opens at http://localhost:8501. On Windows, if `streamlit` isn't recognised, use `python -m streamlit run app.py`. Tested on Streamlit 1.62.
 
 ## Panels
 
 | Panel | What it shows | Source |
 |---|---|---|
-| Overview | The four variants, headline cost figures at 8,192 tokens | `four_way_sweep_results.json` |
-| Attention patterns | Live-generated attention mask for any variant, sequence length and window size | computed, no file needed |
-| Efficiency scaling | Runtime and peak memory, log–log, four variants | `four_way_sweep_results.json` |
+| Overview | The four variants and headline cost figures at 8,192 tokens | `four_way_sweep_results.json` |
+| Attention patterns | Live attention mask for any variant, sequence length and window size | computed live |
+| Efficiency scaling | Runtime and peak memory (log–log) for all four variants | `four_way_sweep_results.json` |
 | Task accuracy | Copy task by window size, or text classification | `copy_task_v2_results.json`, `classification_results.json` |
-| Depth study | Copy accuracy against layer count, with the standard-attention control | `depth_results.json` |
-| Data & exports | Every source file, inspectable and downloadable | all of `data/` |
+| Depth study | Copy accuracy against layer count, with a standard-attention control | `depth_results.json` |
+| Data & exports | Every source file, inspectable and downloadable | `data/` |
 
-## Exports
+All results are read from JSON files in `data/`, written directly by the experiment notebook. No result is hard-coded.
 
-- **Tables** — each panel has a *Measured values* expander with a CSV download.
-- **Charts** — hover any chart and use the camera icon in its toolbar to save a PNG.
-- **Raw results** — the Data & exports panel serves every JSON file.
-- **Masks** — the Attention patterns panel exports the generated mask as CSV.
+**Exports:** CSV tables (the "Measured values" expander on each panel), PNG charts (camera icon in the chart toolbar), raw JSON (Data & exports panel), and attention masks as CSV.
 
-## Data files
+## Interpretation choices
 
-`depth_results.json` here is the version containing **both** the overlapping
-results and the `standard_by_depth` control (originally exported as
-`depth_results_2.json`). The control line is what makes the depth result
-interpretable, so don't overwrite this with the earlier single-series file.
+- **Naming:** the non-overlapping variant is called *disjoint block* throughout, not "sliding-window", because tokens never attend across block boundaries.
+- **Degenerate case:** the w=128 copy-task result is shaded and annotated. At that setting only three blocks exist, so it is effectively full attention and not evidence that local attention solves long-range tasks.
+- **Classification scope:** the classification result reflects how local the task is. The overlapping variant has not yet been evaluated on it.
 
-To refresh any panel, drop a newer export into `data/` under the same filename
-and reload the page. The loaders also accept the older key names
-(`true_sliding_window`, `overlapping_w32`), so previous exports still work.
+## Notes on the data files
 
-## Framing carried through the interface
+`depth_results.json` includes both the overlapping-window results and the standard-attention control (`standard_by_depth`), which is needed to interpret the depth study. To refresh a panel, replace the matching file in `data/` and reload. Older key names (`true_sliding_window`, `overlapping_w32`) are still accepted.
 
-Three points your supervisor raised are built into the panels rather than left
-to narration:
+## Licence
 
-- The disjoint variant is called **disjoint block** everywhere, never "true
-  sliding-window".
-- The w=128 copy-task result is shaded **degenerate** and annotated, because
-  only three blocks exist at that setting, making it effectively full attention.
-- The classification result is framed as a **property of the task**, with a note
-  that the overlapping variant has not yet been run on it.
+MIT
